@@ -1,0 +1,86 @@
+
+    def unpair_and_reload(self, device_address):
+        success = self.bluetooth_device_manager.unpair_device(device_address,self.interface)
+        if success:
+            print(f"[INFO] Unpaired {device_address}")
+        else:
+            QMessageBox.warning(self, "Unpair Failed", f"Could not unpair {device_address}")
+        self.remove_unpaired_device(device_address)
+        self.load_profile_tabs_for_device(device_address)
+
+    def remove_unpaired_device(self, unpaired_address):
+        """
+        Removes a specific unpaired device from the profiles list (if present).
+        This avoids clearing the entire list and keeps all other devices intact.
+        """
+        for i in range(self.profiles_list_widget.count()):
+            item_text = self.profiles_list_widget.item(i).text().strip()
+            if item_text == unpaired_address:
+                self.profiles_list_widget.takeItem(i)
+                break
+
+    def add_connection_controls(self, layout: QVBoxLayout, device_address: str):
+        """
+        Add Connect / Disconnect / Unpair buttons to the given layout.
+        These buttons remain visible but enable/disable based on current device state.
+        """
+        bold_font = QFont()
+        bold_font.setBold(True)
+
+        button_layout = QHBoxLayout()
+
+        self.is_connected = self.bluetooth_device_manager.is_device_connected(device_address)
+        self.is_paired = device_address in self.bluetooth_device_manager.get_paired_devices()
+
+        # Connect Button
+        self.connect_button = QPushButton("Connect")
+        #self.update_device_buttons_state(device_address)  # Enable/disable based on state
+        self.connect_button.setFont(bold_font)
+        self.connect_button.setStyleSheet("color: black; padding: 4px;")
+        self.connect_button.setFixedWidth(100)
+        self.connect_button.setEnabled(not self.is_connected)
+        self.connect_button.clicked.connect(lambda: self.connect_and_reload(device_address))
+        button_layout.addWidget(self.connect_button)
+
+        # Disconnect Button
+        self.disconnect_button = QPushButton("Disconnect")
+        self.disconnect_button.setFont(bold_font)
+        self.disconnect_button.setStyleSheet("color: black; padding: 4px;")
+        self.disconnect_button.setFixedWidth(100)
+        self.disconnect_button.setEnabled(self.is_connected)
+        self.disconnect_button.clicked.connect(lambda: self.disconnect_and_reload(device_address))
+        button_layout.addWidget(self.disconnect_button)
+
+        # Unpair Button
+        self.unpair_button = QPushButton("Unpair")
+        self.unpair_button.setFont(bold_font)
+        self.unpair_button.setStyleSheet("color: black; padding: 4px;")
+        self.unpair_button.setFixedWidth(100)
+        self.unpair_button.setEnabled(self.is_paired)
+        self.unpair_button.clicked.connect(lambda: self.unpair_and_reload(device_address))
+        button_layout.addWidget(self.unpair_button)
+
+        layout.addLayout(button_layout)
+
+    def remove_device(self, address, interface):
+        adapter_path = f"/org/bluez/{interface}"
+        obj = self.bus.get_object("org.bluez", "/")
+        manager = dbus.Interface(obj, "org.freedesktop.DBus.ObjectManager")
+        objects = manager.GetManagedObjects()
+
+
+        for path, interfaces in objects.items():
+            if "org.bluez.Device1" in interfaces:
+                if interfaces["org.bluez.Device1"].get("Address") == address and path.startswith(adapter_path):
+                    try:
+                        adapter = dbus.Interface(
+                            self.bus.get_object("org.bluez", self.adapter_path),
+                            "org.bluez.Adapter1"
+                        )
+                        adapter.RemoveDevice(path)
+                        return True
+                    except dbus.exceptions.DBusException as e:
+                        print(f"Error removing device {address}: {e}")
+                        return False
+        print(f"Device with address {address} not found on {interface}")
+        return True  # already removed
