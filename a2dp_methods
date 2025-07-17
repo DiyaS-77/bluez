@@ -1,3 +1,42 @@
+def media_control(self, command):
+    """
+    Send an AVRCP media control command to a connected A2DP device using the correct controller.
+
+    Supported commands: play, pause, next, previous, rewind.
+
+    :param command: The command to send as a string.
+    :return: Result message.
+    """
+    valid = {
+        "play": "Play",
+        "pause": "Pause",
+        "next": "Next",
+        "previous": "Previous",
+        "rewind": "FastRewind"
+    }
+
+    if command not in valid:
+        return f"Invalid command: {command}"
+
+    om = dbus.Interface(self.bus.get_object("org.bluez", "/"), "org.freedesktop.DBus.ObjectManager")
+    objects = om.GetManagedObjects()
+
+    # Filter MediaControl1 interfaces under the current adapter (e.g., hci0)
+    for path, interfaces in objects.items():
+        if "org.bluez.MediaControl1" in interfaces and f"/{self.interface}/" in path:
+            try:
+                control_iface = dbus.Interface(self.bus.get_object("org.bluez", path), "org.bluez.MediaControl1")
+                getattr(control_iface, valid[command])()
+                return f"AVRCP {command} sent to {path}"
+            except Exception as e:
+                return f"Error sending AVRCP {command}: {str(e)}"
+
+    return f"No MediaControl1 interface found under {self.interface} (is device connected via A2DP with AVRCP?)"
+
+
+
+
+
   def load_profile_tabs_for_device(self, device_address):
         bold_font = QFont()
         bold_font.setBold(True)
