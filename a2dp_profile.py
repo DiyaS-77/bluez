@@ -1,3 +1,40 @@
+def pair_device(self, address, interface):
+    """
+    Pairs with a Bluetooth device using the given controller interface.
+
+    :param address: Bluetooth MAC address.
+    :param interface: e.g., 'hci0', 'hci1'
+    :return: True if successfully paired, False otherwise.
+    """
+    device_path = self.find_device_path(address, interface)
+    if device_path:
+        try:
+            device = dbus.Interface(self.bus.get_object("org.bluez", device_path),
+                                    dbus_interface="org.bluez.Device1")
+            device.Pair()
+
+            # Wait until pairing is confirmed (optional)
+            props = dbus.Interface(self.bus.get_object("org.bluez", device_path),
+                                   "org.freedesktop.DBus.Properties")
+            paired = props.Get("org.bluez.Device1", "Paired")
+            if paired:
+                print(f"[Bluetooth] Successfully paired with {address} on {interface}")
+                return True
+            else:
+                print(f"[Bluetooth] Pairing not confirmed with {address}")
+                return False
+
+        except dbus.exceptions.DBusException as e:
+            print(f"[Bluetooth] Pairing failed with {address} on {interface}: {e}")
+            return False
+    else:
+        print(f"[Bluetooth] Device path not found for {address} on {interface}")
+        return False
+
+
+
+
+
 import dbus
 import subprocess
 from Backend_lib.Linux.daemons import BluezServices
