@@ -1,3 +1,73 @@
+import subprocess
+import psutil
+import time
+import dbus
+
+class DaemonManager:
+    def __init__(self):
+        self.processes = {}
+
+    def is_running(self, name):
+        for proc in psutil.process_iter(['pid', 'name']):
+            if proc.info['name'] == name:
+                return True
+        return False
+
+    def is_defunct(self, name):
+        for proc in psutil.process_iter(['name', 'status']):
+            if proc.info['name'] == name and proc.status() == psutil.STATUS_ZOMBIE:
+                return True
+        return False
+
+    def stop_process(self, name):
+        for proc in psutil.process_iter(['pid', 'name']):
+            if proc.info['name'] == name:
+                try:
+                    proc.terminate()
+                    proc.wait(timeout=3)
+                except Exception:
+                    proc.kill()
+
+    def start_daemons(self):
+        daemon_cmds = {
+            "bluetoothd": ["bluetoothd", "-n", "-d", "--compat"],
+            "pulseaudio": ["pulseaudio", "--start"]
+        }
+
+        for name, cmd in daemon_cmds.items():
+            if self.is_defunct(name) or self.is_running(name):
+                self.stop_process(name)
+            try:
+                proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                self.processes[name] = proc
+                print(f"[DaemonManager] Started {name}")
+            except Exception as e:
+                print(f"[DaemonManager] Failed to start {name}: {e}")
+
+        # Wait for DBus availability (optional)
+        self.wait_for_dbus_service('org.bluez')
+        self.wait_for_dbus_service('org.PulseAudio1')
+
+    def stop_daemons(self):
+        for name in ["bluetoothd", "pulseaudio"]:
+            self.stop_process(name)
+            print(f"[DaemonManager] Stopped {name}")
+
+    def wait_for_dbus_service(self, service_name, timeout=10):
+        bus = dbus.SystemBus() if service_name == "org.bluez" else dbus.SessionBus()
+        for _ in range(timeout):
+            try:
+                if service_name in bus.list_names():
+                    print(f"[DaemonManager] DBus service {service_name} is available.")
+                    return
+            except Exception:
+                pass
+            time.sleep(1)
+        raise TimeoutError(f"Timeout waiting for DBus service: {service_name}")
+
+
+
+
 hci_commands = {
     "Link Control commands": "0x01",
     "Link Policy commands": "0x02",
