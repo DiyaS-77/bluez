@@ -1,3 +1,22 @@
+
+
+import dbus
+import time
+
+def wait_for_dbus_service(bus_name, timeout=5):
+    bus = dbus.SystemBus()
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        try:
+            bus.get_name_owner(bus_name)
+            return True
+        except dbus.exceptions.DBusException as e:
+            if "org.freedesktop.DBus.Error.NameHasNoOwner" in str(e):
+                time.sleep(0.5)
+            else:
+                raise e
+    raise TimeoutError(f"Timeout waiting for DBus service '{bus_name}' to become available.")
+
 self.daemon_manager.start_daemons()
 wait_for_dbus_service('org.bluez')
 wait_for_dbus_service('org.PulseAudio1')
