@@ -1,3 +1,82 @@
+    def pair(self, address):
+        """
+        Pair with the device at the given Bluetooth address.
+
+        :param address: Bluetooth device MAC address.
+        :return: True if paired successfully, False otherwise.
+        """
+        try:
+            device_path = self._get_device_path(address)
+            device = self._get_device_interface(device_path)
+
+            print(f"Initiating pairing with {device_path}")
+            device.Pair()
+            return True
+
+        except dbus.exceptions.DBusException as e:
+            if "Did not receive a reply" in str(e) or "Timeout" in str(e):
+                print("[BluetoothDeviceManager] Pair() timeout, checking status...")
+                time.sleep(2)
+
+                device_props = dbus.Interface(
+                    self.bus.get_object("org.bluez", device_path),
+                    "org.freedesktop.DBus.Properties"
+                )
+                paired = device_props.Get("org.bluez.Device1", "Paired")
+                if paired:
+                    print("[BluetoothDeviceManager] Device is actually paired.")
+                    return True
+
+            print(f"[BluetoothDeviceManager] Pairing failed: {e}")
+            return False
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def find_device_path(self, address, interface):
     adapter_path = f"/org/bluez/{interface}"
     objects = self.object_manager.GetManagedObjects()
