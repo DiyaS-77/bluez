@@ -1,3 +1,34 @@
+
+
+def get_paired_devices(self, interface="hci0"):
+    paired = {}
+    adapter_path = f"/org/bluez/{interface}"
+    objects = self.object_manager.GetManagedObjects()
+    for path, interfaces in objects.items():
+        if "org.bluez.Device1" in interfaces:
+            props = interfaces["org.bluez.Device1"]
+            if props.get("Paired", False) and props.get("Adapter") == adapter_path:
+                address = props.get("Address")
+                name = props.get("Name", "Unknown")
+                paired[address] = name
+    return paired
+
+def get_connected_devices(self, interface="hci0"):
+    connected = {}
+    adapter_path = f"/org/bluez/{interface}"
+    objects = self.object_manager.GetManagedObjects()
+    for path, interfaces in objects.items():
+        if "org.bluez.Device1" in interfaces:
+            props = interfaces["org.bluez.Device1"]
+            if props.get("Connected", False) and props.get("Adapter") == adapter_path:
+                address = props.get("Address")
+                name = props.get("Name", "Unknown")
+                connected[address] = name
+    return connected
+
+
+
+
 import subprocess
 import psutil
 import time
