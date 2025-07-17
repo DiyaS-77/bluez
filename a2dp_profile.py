@@ -1,3 +1,23 @@
+def find_device_path(self, address, interface):
+    """
+    Returns the DBus path for the device connected to the given adapter.
+
+    :param address: MAC address of the device.
+    :param interface: e.g. 'hci0', 'hci1'
+    :return: DBus object path (str) or None
+    """
+    objects = self.object_manager.GetManagedObjects()
+    formatted_address = address.replace(":", "_").upper()
+
+    for path, interfaces in objects.items():
+        if f"/{interface}/dev_{formatted_address}" in path:
+            if "org.bluez.Device1" in interfaces:
+                return path
+
+    return None
+
+
+
 def pair_device(self, address, interface):
     """
     Pairs with a Bluetooth device using the given controller interface.
