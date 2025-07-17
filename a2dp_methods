@@ -1,3 +1,64 @@
+
+def get_connected_a2dp_source_devices(self, interface):
+    """
+    Get a list of currently connected A2DP source devices on the given interface.
+
+    Args:
+        interface (str): Controller interface like 'hci0' or 'hci1'
+
+    Returns:
+        dict: Dictionary of connected A2DP source devices (MAC -> Name)
+    """
+    connected = {}
+    adapter_path = f"/org/bluez/{interface}"
+    om = dbus.Interface(self.bus.get_object("org.bluez", "/"), "org.freedesktop.DBus.ObjectManager")
+    objects = om.GetManagedObjects()
+
+    for path, interfaces in objects.items():
+        if "org.bluez.Device1" in interfaces:
+            props = interfaces["org.bluez.Device1"]
+            if props.get("Connected", False) and props.get("Adapter") == adapter_path:
+                uuids = props.get("UUIDs", [])
+                if any("110a" in uuid.lower() for uuid in uuids):  # A2DP Source UUID
+                    address = props.get("Address")
+                    name = props.get("Name", "Unknown")
+                    connected[address] = name
+    return connected
+
+
+
+
+
+def get_connected_a2dp_sink_devices(self, interface):
+    """
+    Get a list of currently connected A2DP sink devices on the given interface.
+
+    Args:
+        interface (str): Controller interface like 'hci0' or 'hci1'
+
+    Returns:
+        dict: Dictionary of connected A2DP sink devices (MAC -> Name)
+    """
+    connected = {}
+    adapter_path = f"/org/bluez/{interface}"
+    om = dbus.Interface(self.bus.get_object("org.bluez", "/"), "org.freedesktop.DBus.ObjectManager")
+    objects = om.GetManagedObjects()
+
+    for path, interfaces in objects.items():
+        if "org.bluez.Device1" in interfaces:
+            props = interfaces["org.bluez.Device1"]
+            if props.get("Connected", False) and props.get("Adapter") == adapter_path:
+                uuids = props.get("UUIDs", [])
+                if any("110b" in uuid.lower() for uuid in uuids):  # A2DP Sink UUID
+                    address = props.get("Address")
+                    name = props.get("Name", "Unknown")
+                    connected[address] = name
+    return connected
+
+
+
+
+
 def media_control(self, command):
     """
     Send an AVRCP media control command to a connected A2DP device using the correct controller.
