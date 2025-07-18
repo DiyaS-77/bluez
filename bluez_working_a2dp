@@ -1,3 +1,53 @@
+
+def controller_selected(self, address):
+    """
+    Handles logic when a controller is selected from the list. 
+    Stores the bd_address and interface, powers on the adapter, 
+    and displays controller interface details below the selected row.
+
+    Args:
+        address: selected controller bd_address (QListWidgetItem).
+    """
+    controller = address.text()
+    self.log.info(f"Controller Selected: {controller}")
+    self.controller.bd_address = controller
+
+    # Get interface corresponding to controller
+    if controller in self.controller.controllers_list:
+        self.controller.interface = self.controller.controllers_list[controller]
+
+    # Power on the adapter
+    bluetooth_device_manager = BluetoothDeviceManager(interface=self.controller.interface)
+    bluetooth_device_manager.power_on_adapter()
+
+    # ✅ Remove previous interface detail row if it exists
+    if self.previous_row_selected is not None:
+        self.controllers_list_widget.takeItem(self.previous_row_selected)
+        self.previous_row_selected = None
+
+    # ✅ Insert new interface detail row just below the selected controller
+    current_row = self.controllers_list_widget.currentRow()
+    interface_details = self.controller.get_controller_interface_details()
+    info_item = QListWidgetItem(interface_details)
+    info_item.setTextAlignment(Qt.AlignmentFlag.AlignHCenter)
+
+    self.controllers_list_widget.insertItem(current_row + 1, info_item)
+    self.previous_row_selected = current_row + 1
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import dbus
 import dbus.service
 import dbus.mainloop.glib
