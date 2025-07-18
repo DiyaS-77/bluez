@@ -1,3 +1,31 @@
+   def is_device_connected(self, device_address):
+        """
+        Checks if the specified device is connected.
+
+        Args:
+            device_address (str): Bluetooth MAC address.
+
+        Returns:
+            bool: True if connected, False otherwise.
+        """
+        device_path = self.find_device_path(device_address,interface=self.interface)
+        if not device_path:
+            return False
+
+        props = dbus.Interface(
+            self.bus.get_object("org.bluez", device_path),
+            "org.freedesktop.DBus.Properties"
+        )
+        try:
+            return props.Get("org.bluez.Device1", "Connected")
+        except dbus.exceptions.DBusException:
+            return False
+
+
+
+
+
+
 def on_profile_tab_changed(self, index):
     if not hasattr(self, 'device_tab_widget') or index < 0:
         return  # Prevent early or invalid calls
