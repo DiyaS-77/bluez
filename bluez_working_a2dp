@@ -1,26 +1,36 @@
-   def is_device_connected(self, device_address):
-        """
-        Checks if the specified device is connected.
 
-        Args:
-            device_address (str): Bluetooth MAC address.
+def is_device_connected(self, device_address):
+    """
+    Checks if the specified device is connected.
 
-        Returns:
-            bool: True if connected, False otherwise.
-        """
-        device_path = self.find_device_path(device_address,interface=self.interface)
-        if not device_path:
-            return False
+    Args:
+        device_address (str): Bluetooth MAC address.
 
+    Returns:
+        bool: True if connected, False otherwise.
+    """
+    device_path = self.find_device_path(device_address, interface=self.interface)
+    if not device_path:
+        print(f"[DEBUG] Device path not found for {device_address} on {self.interface}")
+        return False
+
+    try:
         props = dbus.Interface(
             self.bus.get_object("org.bluez", device_path),
             "org.freedesktop.DBus.Properties"
         )
-        try:
-            return props.Get("org.bluez.Device1", "Connected")
-        except dbus.exceptions.DBusException:
+        connected = props.Get("org.bluez.Device1", "Connected")
+
+        # Extra validation: make sure device is under the correct adapter/interface
+        if self.interface not in device_path:
+            print(f"[DEBUG] Device path {device_path} does not match interface {self.interface}")
             return False
 
+        return connected
+
+    except dbus.exceptions.DBusException as e:
+        print(f"[DEBUG] DBusException while checking connection: {e}")
+        return False
 
 
 
