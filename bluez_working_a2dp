@@ -1,4 +1,29 @@
+def on_profile_tab_changed(self, index):
+    if not hasattr(self, 'device_tab_widget') or index < 0:
+        return  # Prevent early or invalid calls
 
+    selected_tab = self.device_tab_widget.tabText(index)
+
+    # Fresh check before rendering
+    if not self.bluetooth_device_manager.is_device_connected(self.device_address):
+        print(f"[DEBUG] Skipping profile tab rendering - device {self.device_address} not connected.")
+        return
+
+    if selected_tab == "A2DP":
+        self.clear_layout(self.a2dp_tab_placeholder)
+        layout = QVBoxLayout()
+        a2dp_panel = self.build_a2dp_ui(self.device_address)
+        layout.addWidget(a2dp_panel)
+        self.a2dp_tab_placeholder.setLayout(layout)
+        self.a2dp_tab_placeholder.update()
+
+    elif selected_tab == "OPP":
+        self.clear_layout(self.opp_tab_placeholder)
+        layout = QVBoxLayout()
+        opp_tab = self.build_opp_tab(self.device_address)
+        layout.addWidget(opp_tab)
+        self.opp_tab_placeholder.setLayout(layout)
+        self.opp_tab_placeholder.update()
     def build_a2dp_ui(self, device_address):
         """
         Builds a single A2DP panel combining source streaming and sink media control,
