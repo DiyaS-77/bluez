@@ -1,938 +1,540 @@
 
-def controller_selected(self, address):
-    """
-    Handles logic when a controller is selected from the list. 
-    Stores the bd_address and interface, powers on the adapter, 
-    and displays controller interface details below the selected row.
-
-    Args:
-        address: selected controller bd_address (QListWidgetItem).
-    """
-    controller = address.text()
-    self.log.info(f"Controller Selected: {controller}")
-    self.controller.bd_address = controller
-
-    # Get interface corresponding to controller
-    if controller in self.controller.controllers_list:
-        self.controller.interface = self.controller.controllers_list[controller]
-
-    # Power on the adapter
-    bluetooth_device_manager = BluetoothDeviceManager(interface=self.controller.interface)
-    bluetooth_device_manager.power_on_adapter()
-
-    # ✅ Remove previous interface detail row if it exists
-    if self.previous_row_selected is not None:
-        self.controllers_list_widget.takeItem(self.previous_row_selected)
-        self.previous_row_selected = None
-
-    # ✅ Insert new interface detail row just below the selected controller
-    current_row = self.controllers_list_widget.currentRow()
-    interface_details = self.controller.get_controller_interface_details()
-    info_item = QListWidgetItem(interface_details)
-    info_item.setTextAlignment(Qt.AlignmentFlag.AlignHCenter)
-
-    self.controllers_list_widget.insertItem(current_row + 1, info_item)
-    self.previous_row_selected = current_row + 1
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-import dbus
-import dbus.service
-import dbus.mainloop.glib
-import os
-import subprocess
-import time
-from gi.repository import GObject
-import mimetypes
-from dbus.mainloop.glib import DBusGMainLoop
-
-# Set the D-Bus main loop
-dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
-
-
-class BluetoothDeviceManager:
-    """
-    A class for managing Bluetooth devices using the BlueZ D-Bus API.
-
-    This manager provides capabilities for discovering, pairing, connecting,
-    streaming audio (A2DP), media control (AVRCP), and removing Bluetooth devices.
-    """
-
-    def __init__(self,interface=None):
+    def build_a2dp_ui(self, device_address):
         """
-        Initialize the BluetoothDeviceManager by setting up the system bus and adapter.
+        Builds a single A2DP panel combining source streaming and sink media control,
+        based on the device's A2DP roles.
         """
-        self.interface = interface
-        self.bus = dbus.SystemBus()
-        self.adapter_path = f'/org/bluez/{self.interface}'
-        self.adapter_proxy = self.bus.get_object('org.bluez', self.adapter_path)
-        self.adapter = dbus.Interface(self.adapter_proxy, 'org.bluez.Adapter1')
-        self.device_address=None
-        self.stream_process = None
-        self.device_path = None
-        self.device_address = None
-        self.device_sink = None
-        self.devices = {}
-        self.last_session_path = None
-        self.opp_process = None
+        bold_font = QFont()
+        bold_font.setBold(True)
 
-    def start_discovery(self):
+        layout = QVBoxLayout()
+        layout.setSpacing(10)
+
+        a2dp_label = QLabel("<b>A2DP Functionality:</b>")
+        layout.addWidget(a2dp_label)
+
+        self.device_address_source = device_address # Assume the selected device is both source/sink for the UI
+        self.device_address_sink = device_address # Set this for media control
+
+        role = self.get_a2dp_role_for_device(device_address)
+
+        if role in ["sink", "both"]:
+            # A2DP Source (streaming to this device)
+            streaming_group = QGroupBox("Streaming Audio (A2DP Source)")
+            streaming_layout = QVBoxLayout()
+            streaming_group.setLayout(streaming_layout)
+
+            audio_layout = QHBoxLayout()
+            audio_layout.addWidget(QLabel("Audio File:"))
+            self.audio_location_input = QLineEdit()
+            self.audio_location_input.setReadOnly(True)
+            audio_layout.addWidget(self.audio_location_input)
+            self.browse_audio_button = QPushButton("Browse...")
+            self.browse_audio_button.clicked.connect(self.browse_audio_file)
+            audio_layout.addWidget(self.browse_audio_button)
+            streaming_layout.addLayout(audio_layout)
+
+            streaming_buttons_layout = QHBoxLayout()
+            self.start_streaming_button = QPushButton("Start Streaming")
+            self.start_streaming_button.setObjectName("startButton")
+            self.start_streaming_button.clicked.connect(self.bluetooth_device_manager.start_a2dp_stream)
+            streaming_buttons_layout.addWidget(self.start_streaming_button)
+
+            self.stop_streaming_button = QPushButton("Stop Streaming")
+            self.stop_streaming_button.setObjectName("stopButton")
+            self.stop_streaming_button.clicked.connect(self.bluetooth_device_manager.stop_a2dp_stream)
+            self.stop_streaming_button.setEnabled(False)
+            streaming_buttons_layout.addWidget(self.stop_streaming_button)
+            streaming_layout.addLayout(streaming_buttons_layout)
+
+            layout.addWidget(streaming_group)
+
+        if role in ["source", "both"]:
+            # A2DP Sink (controlling this device's media)
+            media_control_group = QGroupBox("Media Control (A2DP Sink)")
+            media_control_group.setFont(bold_font)
+            media_control_layout = QVBoxLayout()
+            media_control_group.setLayout(media_control_layout)
+
+
+            control_buttons = QHBoxLayout()
+            self.play_button = QPushButton("Play")
+            self.play_button.setFont(bold_font)
+            self.play_button.clicked.connect(lambda: self.media_control("play"))
+            control_buttons.addWidget(self.play_button)
+
+            self.pause_button = QPushButton("Pause")
+            self.pause_button.setFont(bold_font)
+            self.pause_button.clicked.connect(lambda: self.media_control("pause"))
+            control_buttons.addWidget(self.pause_button)
+
+            self.next_button = QPushButton("Next")
+            self.next_button.setFont(bold_font)
+            self.next_button.clicked.connect(lambda: self.media_control("next"))
+            control_buttons.addWidget(self.next_button)
+
+            self.previous_button = QPushButton("Previous")
+            self.previous_button.setFont(bold_font)
+            self.previous_button.clicked.connect(lambda: self.media_control("previous"))
+            control_buttons.addWidget(self.previous_button)
+
+            self.rewind_button = QPushButton("Rewind")
+            self.rewind_button.setFont(bold_font)
+            self.rewind_button.clicked.connect(lambda: self.media_control("rewind"))
+            control_buttons.addWidget(self.rewind_button)
+
+            media_control_layout.addLayout(control_buttons)
+            layout.addWidget(media_control_group)
+
+        widget = QWidget()
+        widget.setLayout(layout)
+        return widget
+
+    def media_control(self,command):
+        self.bluetooth_device_manager.media_control(command)
+
+    def start_streaming(self):
         """
-        Start scanning for nearby Bluetooth devices.
+        Start A2DP streaming to a selected Bluetooth sink device.
+        Validates file and device selection.
+
+        args:None
+        returns: None
+
         """
-        self.adapter.StartDiscovery()
 
-    def stop_discovery(self):
+        audio_path = self.audio_location_input.text().strip()
+        if not audio_path or not os.path.exists(audio_path):
+            QMessageBox.warning(self, "Invalid Audio File", "Please select a valid audio file to stream.")
+            return
+
+        # Ensure that the correct sink device is selected
+        #selected_index = self.device_selector.currentIndex()
+        #self.device_address_source = self.device_selector.itemData(selected_index)
+
+        print(f"Selected device address for streaming: {self.device_address_source}")
+
+        if not self.device_address_source:
+            QMessageBox.warning(self, "No Device", "Please select a Bluetooth sink device to stream.")
+            return
+
+        print(f"A2DP streaming started with file: {audio_path}")
+
+        self.start_streaming_button.setEnabled(False)
+        self.stop_streaming_button.setEnabled(True)
+
+        # Create BluetoothDeviceManager instance and start streaming
+        success = self.bluetooth_device_manager.start_a2dp_stream(self.device_address_source, audio_path)
+
+        if not success:
+            QMessageBox.critical(self, "Streaming Failed", "Failed to start streaming.")
+            self.start_streaming_button.setEnabled(True)
+            self.stop_streaming_button.setEnabled(False)
+
+    def stop_streaming(self):
         """
-        Stop Bluetooth device discovery.
-        """
-        self.adapter.StopDiscovery()
-
-    def power_on_adapter(self):
-        """
-        Power on the local Bluetooth adapter.
-        """
-        adapter = dbus.Interface(
-            self.bus.get_object("org.bluez", self.adapter_path),
-            "org.freedesktop.DBus.Properties"
-        )
-        adapter.Set("org.bluez.Adapter1", "Powered", dbus.Boolean(True))
-
-    def inquiry(self, timeout):
-        """
-        Scan for nearby Bluetooth devices for a specified duration.
-
-        :param timeout: Duration in seconds to scan for devices.
-        :return: List of discovered devices in the format "Alias (Address)".
-        """
-        self.start_discovery()
-        time.sleep(timeout)
-        self.stop_discovery()
-
-        discovered = []
-        om = dbus.Interface(self.bus.get_object("org.bluez", "/"), "org.freedesktop.DBus.ObjectManager")
-        objects = om.GetManagedObjects()
-        for path, interfaces in objects.items():
-            if "org.bluez.Device1" in interfaces:
-                device_props = dbus.Interface(self.bus.get_object("org.bluez", path),
-                                              dbus_interface="org.freedesktop.DBus.Properties")
-                try:
-                    address = device_props.Get("org.bluez.Device1", "Address")
-                    alias = device_props.Get("org.bluez.Device1", "Alias")
-                    discovered.append(f"{alias} ({address})")
-                except:
-                    continue
-        return discovered
-
-    def _get_device_path(self, address):
-        """
-        Format the Bluetooth address to get the BlueZ D-Bus object path.
-
-        :param address: Bluetooth device MAC address.
-        :return: D-Bus object path.
-        """
-        formatted_address = address.replace(":", "_")
-        return f"/org/bluez/{self.interface}/dev_{formatted_address}"
-
-
-
-    '''
-    def find_device_path(self, address):
-        """
-        Find the full D-Bus object path of a device by its Bluetooth address.
-
-        :param address: Bluetooth device MAC address.
-        :return: D-Bus object path or None if not found.
-        """
-        om = dbus.Interface(self.bus.get_object("org.bluez", "/"), "org.freedesktop.DBus.ObjectManager")
-        objects = om.GetManagedObjects()
-        for path, interfaces in objects.items():
-            if "org.bluez.Device1" in interfaces:
-                props = interfaces["org.bluez.Device1"]
-                if props.get("Address") == address:
-                    return path
-        return None
-    '''
-
-    def find_device_path(self, address, interface):
-        adapter_path = f"/org/bluez/{interface}"
-        om = dbus.Interface(self.bus.get_object("org.bluez", "/"), "org.freedesktop.DBus.ObjectManager")
-        objects = om.GetManagedObjects()
-        formatted_address = address.replace(":", "_").upper()
-
-        for path, interfaces in objects.items():
-            if f"/{interface}/dev_{formatted_address}" in path:
-                if "org.bluez.Device1" in interfaces:
-                    return path
-
-        return None
-
-    def br_edr_connect(self, address, interface):
-        device_path = self.find_device_path(address, interface)
-        if device_path:
-            try:
-                device = dbus.Interface(self.bus.get_object("org.bluez", device_path),
-                                        dbus_interface="org.bluez.Device1")
-                device.Connect()
-
-                props = dbus.Interface(self.bus.get_object("org.bluez", device_path),
-                                       "org.freedesktop.DBus.Properties")
-                connected = props.Get("org.bluez.Device1", "Connected")
-                return connected
-            except Exception as e:
-                print(f"Connection failed: {e}")
-        else:
-            print("Device path not found for connection")
-        return False
-
-    def disconnect_le_device(self, address, interface):
-        device_path = self.find_device_path(address, interface)
-        if device_path:
-            try:
-                device = dbus.Interface(self.bus.get_object("org.bluez", device_path), "org.bluez.Device1")
-                props = dbus.Interface(self.bus.get_object("org.bluez", device_path), "org.freedesktop.DBus.Properties")
-                connected = props.Get("org.bluez.Device1", "Connected")
-                if not connected:
-                    print(f"Device {address} is already disconnected.")
-                    return True
-                device.Disconnect()
-                return True
-            except dbus.exceptions.DBusException as e:
-                print(f"Error disconnecting device {address}: {e}")
-        return False
-
-    def remove_device(self, address, interface):
-        adapter_path = f"/org/bluez/{interface}"
-        obj = self.bus.get_object("org.bluez", "/")
-        manager = dbus.Interface(obj, "org.freedesktop.DBus.ObjectManager")
-        objects = manager.GetManagedObjects()
-
-
-        for path, interfaces in objects.items():
-            if "org.bluez.Device1" in interfaces:
-                if interfaces["org.bluez.Device1"].get("Address") == address and path.startswith(adapter_path):
-                    try:
-                        adapter = dbus.Interface(
-                            self.bus.get_object("org.bluez", adapter_path),
-                            "org.bluez.Adapter1"
-                        )
-                        adapter.RemoveDevice(path)
-                        return True
-                    except dbus.exceptions.DBusException as e:
-                        print(f"Error removing device {address}: {e}")
-                        return False
-        print(f"Device with address {address} not found on {interface}")
-        return True  # already removed
-
-    def le_connect(self, address, interface):
-        device_path = self.find_device_path(address, interface)
-        if device_path:
-            try:
-                device = dbus.Interface(
-                    self.bus.get_object("org.bluez", device_path),
-                    dbus_interface="org.bluez.Device1"
-                )
-                device.ConnectProfile('0000110e-0000-1000-8000-00805f9b34fb')  # A2DP
-            except Exception as e:
-                print("LE Connection failed:", e)
-    def _get_device_interface(self, device_path):
-        """
-        Get the org.bluez.Device1 interface for the specified device path.
-
-        :param device_path: D-Bus object path of the device.
-        :return: DBus Interface for the device.
-        """
-        return dbus.Interface(
-            self.bus.get_object("org.bluez", device_path),
-            "org.bluez.Device1"
-        )
-
-    def pair(self, address, interface=None):
-        """
-        Pairs with a Bluetooth device using the given controller interface.
-
-        :param address: Bluetooth MAC address.
-        :param interface: e.g., 'hci0', 'hci1'
-        :return: True if successfully paired, False otherwise.
-        """
-        device_path = self.find_device_path(address, interface)
-        if device_path:
-            try:
-                device = dbus.Interface(self.bus.get_object("org.bluez", device_path),
-                                        dbus_interface="org.bluez.Device1")
-                device.Pair()
-
-                # Wait until pairing is confirmed (optional)
-                props = dbus.Interface(self.bus.get_object("org.bluez", device_path),
-                                       "org.freedesktop.DBus.Properties")
-                paired = props.Get("org.bluez.Device1", "Paired")
-                if paired:
-                    print(f"[Bluetooth] Successfully paired with {address} on {interface}")
-                    return True
-                else:
-                    print(f"[Bluetooth] Pairing not confirmed with {address}")
-                    return False
-
-            except dbus.exceptions.DBusException as e:
-                print(f"[Bluetooth] Pairing failed with {address} on {interface}: {e}")
-                return False
-        else:
-            print(f"[Bluetooth] Device path not found for {address} on {interface}")
-            return False
-
-    '''
-    def br_edr_connect(self, address):
-        """
-        Establish a BR/EDR connection to the specified Bluetooth device.
-
-        :param address: Bluetooth device MAC address.
-        :return: True if connected, False otherwise.
-        """
-        device_path = self.find_device_path(address)
-        if device_path:
-            try:
-                device = dbus.Interface(self.bus.get_object("org.bluez", device_path),
-                                        dbus_interface="org.bluez.Device1")
-                device.Connect()
-
-                props = dbus.Interface(self.bus.get_object("org.bluez", device_path),
-                                       "org.freedesktop.DBus.Properties")
-                connected = props.Get("org.bluez.Device1", "Connected")
-                if connected:
-                    print("Connection is successful")
-                    return True
-                else:
-                    print("Connection attempted but not confirmed")
-                    return False
-            except Exception as e:
-                print(f"Connection failed: {e}")
-                return False
-        else:
-            print("Device path not found for connection")
-            return False
-
-
-    def disconnect_le_device(self, address):
-        """
-        Disconnect a Bluetooth LE device using BlueZ D-Bus interface.
-
-        :param address: Bluetooth MAC address (e.g., 'C0:26:DA:00:12:34')
-        :return: True if disconnect successful or not connected, False otherwise.
-        """
-        try:
-            device_path = self._get_device_path(address)
-
-            # Access device and its properties
-            device = dbus.Interface(self.bus.get_object("org.bluez", device_path), "org.bluez.Device1")
-            props = dbus.Interface(self.bus.get_object("org.bluez", device_path), "org.freedesktop.DBus.Properties")
-
-            # Check if already disconnected
-            connected = props.Get("org.bluez.Device1", "Connected")
-            if not connected:
-                print(f"[BluetoothDeviceManager] Device {address} is already disconnected.")
-                return True
-
-            # Perform disconnect
-            print(f"[BluetoothDeviceManager] Disconnecting device {address}...")
-            device.Disconnect()
-            #time.sleep(1)  # Optional: allow async operations to complete
-
-            print(f"[BluetoothDeviceManager] Device {address} disconnected successfully.")
-            return True
-
-        except dbus.exceptions.DBusException as e:
-            print(f"[BluetoothDeviceManager] Error disconnecting device {address}: {e}")
-            return False
-
-    def remove_device(self, address):
-        """
-        Remove the bonded device from the system.
-
-        :param address: Bluetooth device MAC address.
-        :return: True if removed or already gone, False otherwise.
-        """
-        obj = self.bus.get_object("org.bluez", "/")
-        manager = dbus.Interface(obj, "org.freedesktop.DBus.ObjectManager")
-        objects = manager.GetManagedObjects()
-
-        for path, interfaces in objects.items():
-            if "org.bluez.Device1" in interfaces:
-                if interfaces["org.bluez.Device1"].get("Address") == address:
-                    print(f"[BluetoothDeviceManager] Removing device {path}")
-                    try:
-                        adapter = dbus.Interface(
-                            self.bus.get_object("org.bluez", self.adapter_path),
-                            "org.bluez.Adapter1"
-                        )
-                        adapter.RemoveDevice(path)
-                        return True
-                    except dbus.exceptions.DBusException as e:
-                        if "org.freedesktop.DBus.Error.UnknownObject" in str(e):
-                            print(f"[BluetoothDeviceManager] Device {address} already removed")
-                            return True  # Still a success
-                        else:
-                            print(f"[BluetoothDeviceManager] Failed to remove {address}: {e}")
-                            return False
-
-        print(f"[BluetoothDeviceManager] Device with address {address} not found")
-        return True  # Treat as success since it's already not present
-
-
-    def le_connect(self, address):
-        """
-        Initiates Low Energy (LE) connection using a specific profile.
-
-        Args:
-            address (str): Bluetooth MAC address.
-        returns:
-            None
-        """
-        device_path = self.find_device_path(address)
-        if device_path:
-            try:
-                device = dbus.Interface(
-                    self.bus.get_object("org.bluez", device_path),
-                    dbus_interface="org.bluez.Device1"
-                )
-                device.ConnectProfile('0000110e-0000-1000-8000-00805f9b34fb')  # HID Profile
-            except Exception as e:
-                print("LE Connection has failed:", e)
-    '''
-    def set_discoverable_on(self):
-        """
-        Makes the Bluetooth device discoverable.
-
-        args: None
-        return: None
-        """
-        print("Setting Bluetooth device to be discoverable...")
-        command = f"hciconfig {self.interface} piscan"
-        subprocess.run(command, shell=True)
-        print("Bluetooth device is now discoverable.")
-
-    def set_discoverable_off(self):
-        """
-        Makes the Bluetooth device non-discoverable.
-
-        args: None
-        return: None
-        """
-        print("Setting Bluetooth device to be non-discoverable...")
-        command = f"hciconfig {self.interface} noscan"
-        subprocess.run(command, shell=True)
-        print("Bluetooth device is now non-discoverable.")
-
-    def is_device_paired(self, device_address):
-        """
-        Checks if the specified device is paired.
-
-        Args:
-            device_address (str): Bluetooth MAC address.
-
-        Returns:
-            bool: True if paired, False otherwise.
-        """
-        device_path = self.find_device_path(device_address,interface=self.interface)
-        if not device_path:
-            return False
-
-        props = dbus.Interface(
-            self.bus.get_object("org.bluez", device_path),
-            "org.freedesktop.DBus.Properties"
-        )
-        try:
-            return props.Get("org.bluez.Device1", "Paired")
-        except dbus.exceptions.DBusException:
-            return False
-
-    def is_device_connected(self, device_address):
-        """
-        Checks if the specified device is connected.
-
-        Args:
-            device_address (str): Bluetooth MAC address.
-
-        Returns:
-            bool: True if connected, False otherwise.
-        """
-        device_path = self.find_device_path(device_address,interface=self.interface)
-        if not device_path:
-            return False
-
-        props = dbus.Interface(
-            self.bus.get_object("org.bluez", device_path),
-            "org.freedesktop.DBus.Properties"
-        )
-        try:
-            return props.Get("org.bluez.Device1", "Connected")
-        except dbus.exceptions.DBusException:
-            return False
-
-    def refresh_device_list(self):
-        """
-        Updates the internal device list with currently available devices.
+        Stop active A2DP streaming session.
 
         args: None
         returns: None
         """
-        self.devices.clear()
-        om = dbus.Interface(self.bus.get_object("org.bluez", "/"), "org.freedesktop.DBus.ObjectManager")
-        objects = om.GetManagedObjects()
-        for path, interfaces in objects.items():
-            if "org.bluez.Device1" in interfaces:
-                props = interfaces["org.bluez.Device1"]
-                address = props.get("Address")
-                name = props.get("Name", "Unknown")
-                uuids = props.get("UUIDs", [])
-                connected = props.get("Connected", False)
-                if address:
-                    self.devices[address] = {
-                        "Name": name,
-                        "UUIDs": uuids,
-                        "Connected": connected,
-                    }
+        print("A2DP streaming stopped")
+        self.start_streaming_button.setEnabled(True)
+        self.stop_streaming_button.setEnabled(False)
 
-    def get_paired_devices(self, interface=None):
-        paired = {}
-        adapter_path = f"/org/bluez/{interface}"
-        om = dbus.Interface(self.bus.get_object("org.bluez", "/"), "org.freedesktop.DBus.ObjectManager")
-        objects = om.GetManagedObjects()
-        for path, interfaces in objects.items():
-            if "org.bluez.Device1" in interfaces:
-                props = interfaces["org.bluez.Device1"]
-                if props.get("Paired", False) and props.get("Adapter") == adapter_path:
-                    address = props.get("Address")
-                    name = props.get("Name", "Unknown")
-                    paired[address] = name
-        return paired
+        self.bluetooth_device_manager.stop_a2dp_stream()
 
-    def get_connected_devices(self, interface=None):
-        connected = {}
-        adapter_path = f"/org/bluez/{interface}"
-        om = dbus.Interface(self.bus.get_object("org.bluez", "/"), "org.freedesktop.DBus.ObjectManager")
-        objects = om.GetManagedObjects()
-        for path, interfaces in objects.items():
-            if "org.bluez.Device1" in interfaces:
-                props = interfaces["org.bluez.Device1"]
-                if props.get("Connected", False) and props.get("Adapter") == adapter_path:
-                    address = props.get("Address")
-                    name = props.get("Name", "Unknown")
-                    connected[address] = name
-        return connected
+        if hasattr(self, 'streaming_timer'):
+            self.streaming_timer.stop()
 
-    '''
-    def get_paired_devices(self):
-        """
-        Retrieves a dictionary of currently paired Bluetooth devices.
 
-        args : None
-        Returns:
-            dict: Mapping of device addresses to names for paired devices.
-        """
-        paired_devices = {}
-        om = dbus.Interface(self.bus.get_object("org.bluez", "/"), "org.freedesktop.DBus.ObjectManager")
-        objects = om.GetManagedObjects()
-        for path, interfaces in objects.items():
-            if "org.bluez.Device1" in interfaces:
-                props = interfaces["org.bluez.Device1"]
-                if props.get("Paired", False):
-                    address = props.get("Address")
-                    name = props.get("Name", "Unknown")
-                    paired_devices[address] = name
-        return paired_devices
-
-    def get_connected_devices(self):
-        """
-        Retrieves a dictionary of currently connected Bluetooth devices.
-
-        args : None
-        Returns:
-            dict: Mapping of device addresses to names.
-        """
-        connected = {}
-        om = dbus.Interface(self.bus.get_object("org.bluez", "/"), "org.freedesktop.DBus.ObjectManager")
-        objects = om.GetManagedObjects()
-        for path, interfaces in objects.items():
-            if "org.bluez.Device1" in interfaces:
-                props = interfaces["org.bluez.Device1"]
-                if props.get("Connected", False):
-                    address = props.get("Address")
-                    name = props.get("Name", "Unknown")
-                    connected[address] = name
-        return connected
-    
-    '''
-
-#--------------------OPP FUNCTIONS---------------------#
-    def send_file_via_obex(self, device_address, file_path):
-        """
-        Send a file to a Bluetooth device via OBEX (Object Push Profile).
-
-        args:
-            device_address (str): Bluetooth address of the target device (e.g., 'XX:XX:XX:XX:XX:XX').
-            file_path (str): Absolute path to the file to send.
-
-        Returns:
-            tuple: A tuple of (status, message). Status can be 'complete', 'error', or 'unknown'.
-        """
-        if not os.path.exists(file_path):
-            msg = f"File does not exist: {file_path}"
-            print(msg)
-            return "error", msg
-
-        try:
-            session_bus = dbus.SessionBus()
-            obex_service = "org.bluez.obex"
-            manager_obj = session_bus.get_object(obex_service, "/org/bluez/obex")
-            manager = dbus.Interface(manager_obj, "org.bluez.obex.Client1")
-
-            # Clean up old session if it exists
-            if self.last_session_path:
-                try:
-                    manager.RemoveSession(self.last_session_path)
-                    print(f"Removed previous session: {self.last_session_path}")
-                    time.sleep(1.0)
-                except Exception as e:
-                    print(f"Previous session cleanup failed: {e}")
-
-            # Create a new OBEX session
-            session_path = manager.CreateSession(device_address, {"Target": dbus.String("opp")})
-            session_path = str(session_path)
-            self.last_session_path = session_path
-            print(f"Created OBEX session: {session_path}")
-
-            # Push the file
-            opp_obj = session_bus.get_object(obex_service, session_path)
-            opp = dbus.Interface(opp_obj, "org.bluez.obex.ObjectPush1")
-            transfer_path = opp.SendFile(file_path)
-            transfer_path = str(transfer_path)
-            print(f"Transfer started: {transfer_path}")
-
-            # Monitor transfer status
-            transfer_obj = session_bus.get_object(obex_service, transfer_path)
-            transfer_props = dbus.Interface(transfer_obj, "org.freedesktop.DBus.Properties")
-
-            status = "unknown"
-            for _ in range(40):
-                status = str(transfer_props.Get("org.bluez.obex.Transfer1", "Status"))
-                print(f"Transfer status: {status}")
-                if status in ["complete", "error"]:
-                    break
-                time.sleep(0.5)
-
-            # Always remove session
-            try:
-                manager.RemoveSession(session_path)
-                self.last_session_path = None
-                print("Session removed after transfer.")
-            except Exception as e:
-                print(f"Error removing session: {e}")
-
-            return status, f"Transfer finished with status: {status}"
-
-        except Exception as e:
-            msg = f"OBEX file send failed: {e}"
-            print(msg)
-            return "error", msg
-
-    def start_opp_receiver(self, save_directory="/tmp"):
-        """
-        Start an OBEX Object Push server to receive files over Bluetooth.
-
-        args:
-            save_directory (str): Directory where received files will be stored.
-
-        Returns:
-            bool: True if server started successfully, False otherwise.
-        """
-        try:
-            if not os.path.exists(save_directory):
-                os.makedirs(save_directory)
-
-            if self.opp_process and self.opp_process.poll() is None:
-                self.opp_process.terminate()
-                self.opp_process.wait()
-                print("Previous OPP server stopped.")
-
-            self.opp_process = subprocess.Popen([
-                "obexpushd",
-                "-B",  # Bluetooth
-                "-o", save_directory,
-                "-n"  # No confirmation prompt
-            ])
-
-            print(f"OPP server started. Receiving files to {save_directory}")
-            return True
-        except Exception as e:
-            print(f"Error starting OPP server: {e}")
-            return False
-
-    def stop_opp_receiver(self):
-        """
-        Stop the OBEX Object Push server if it's currently running.
+    def refresh_a2dp_sink_devices(self):
+        """Refresh the list of connected A2DP source devices for sink control.
 
         args: None
         returns: None
         """
-        if self.opp_process and self.opp_process.poll() is None:
-            self.opp_process.terminate()
-            self.opp_process.wait()
-            print("OPP server stopped.")
+        self.device_selector_sink.clear()
+        connected_sources = self.bluetooth_device_manager.get_connected_a2dp_source_devices()
+        for address, name in connected_sources.items():
+            self.device_selector_sink.addItem(f"{name} ({address})", address)
 
-# -----------A2DP FUNCTIONS----------------------------#
-    def set_device_address(self, address):
+    def browse_audio_file(self):
+        """Open a file dialog for selecting an audio file.
+
+        args: None
+        returns: None
         """
-        Sets the current Bluetooth device for media streaming/control.
+        file_dialog = QFileDialog()
+        file_path, _ = file_dialog.getOpenFileName(None, "Select Audio File", "",
+                                                   "Audio Files (*.mp3 *.wav *.ogg *.flac);;All Files (*)")
+        if file_path:
+            self.audio_location_input.setText(file_path)
 
-        Args:
-            address (str): Bluetooth MAC address.
-        returns:
-            None
-        """
-        self.device_address = address
-        self.device_path = self.find_device_path(address,interface=self.interface)
-        self.device_sink = self.get_sink_for_device(address)
 
-    def get_sink_for_device(self, address):
-        """
-        Finds the PulseAudio sink associated with a Bluetooth device.
+    def get_a2dp_role_for_device(self, device_address):
+        sinks = self.bluetooth_device_manager.get_connected_a2dp_sink_devices(self.interface)
+        sources = self.bluetooth_device_manager.get_connected_a2dp_source_devices(self.interface)
 
-        Args:
-            address (str): Bluetooth MAC address.
-
-        Returns:
-            str | None: Sink name if found, else None.
-        """
-        try:
-            sinks_output = subprocess.check_output(["pactl", "list", "short", "sinks"], text=True)
-            address_formatted = address.replace(":", "_").lower()
-            for line in sinks_output.splitlines():
-                if address_formatted in line.lower():
-                    return line.split()[1]
-        except Exception as e:
-            print(f"Error getting sink for device: {e}")
+        if device_address in sinks and device_address in sources:
+            return "both"
+        elif device_address in sinks:
+            return "sink"
+        elif device_address in sources:
+            return "source"
         return None
 
-    def is_a2dp_streaming(self) -> bool:
-        """
-        Check if an A2DP stream is currently active using PulseAudio.
 
-        Returns:
-            bool: True if audio is streaming to a Bluetooth A2DP sink, False otherwise.
+#------------------OPP METHODS------------------------
+
+    def browse_opp_file(self):
         """
+        Open a file dialog to select a file to send via OPP.
+
+        args: None
+        returns: None
+        """
+
+        file_dialog = QFileDialog()
+        file_path, _ = file_dialog.getOpenFileName(
+            None,
+            "Select File to Send via OPP",
+            "",
+            "All Files (*)"
+        )
+        if file_path:
+            self.opp_location_input.setText(file_path)
+
+    def send_file(self):
+        """
+        Send a selected file to a remote device using OPP.
+
+        args: None
+        returns: None
+        """
+
+        file_path = self.opp_location_input.text()
+        #device_index = self.device_selector.currentIndex()
+        #device_address = self.device_selector.itemData(device_index)
+
+        if not file_path or not self.device_address:
+            QMessageBox.warning(None, "OPP", "Please select a device and a file.")
+            return
+
+        self.send_file_button.setEnabled(False)
+        self.send_file_button.setText("Sending...")
 
         try:
-            # Get all active sink inputs (audio streams)
-            output = subprocess.check_output("pactl list sink-inputs", shell=True, text=True)
-
-            # Check if any sink input is directed to a Bluetooth A2DP sink
-            if "bluez_sink" in output:
-                return True
-
-            return False
-
-        except subprocess.CalledProcessError:
-            # pactl command failed
-            return False
-
-
-    def start_a2dp_stream(self, address, filepath=None):
-        device_path = self.find_device_path(address,interface=self.interface)
-        print(device_path)
-        if not device_path:
-            return "Device not found"
-        try:
-            # Ensure device_address is stored for stop_a2dp_stream
-            self.device_address = address # Store the address of the device being streamed to
-            device = dbus.Interface(self.bus.get_object("org.bluez", device_path), "org.bluez.Device1")
-            props = dbus.Interface(self.bus.get_object("org.bluez", device_path), "org.freedesktop.DBus.Properties")
-            connected = props.Get("org.bluez.Device1", "Connected")
-            if not connected:
-                device.Connect()
-                time.sleep(1.5)
-            print(f"[A2DP] Connected to {address}")
-            if not filepath:
-                return "No audio file specified for streaming"
-            self.stream_process = subprocess.Popen(
-                ["aplay", filepath],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
-            )
-            return f"Streaming started with {filepath}"
+            success = self.bluetooth_device_manager.send_file_via_obex(self.device_address, file_path)
         except Exception as e:
-            return f"A2DP stream error: {str(e)}"
+            success = False
+            print(f"UI error: {e}")
 
-    def stop_a2dp_stream(self):
+        self.send_file_button.setEnabled(True)
+        self.send_file_button.setText("Send File")
+
+        if success is True:
+            QMessageBox.information(None, "OPP", "File sent successfully!")
+        else:
+            QMessageBox.warning(None, "OPP",
+                                "Notification has been sent to the remote device, accept it to receive the object")
+
+    def receive_file(self):
         """
-        Stop the current A2DP audio stream.
-
-        :return: Status message.
-        """
-        if self.stream_process:
-            self.stream_process.terminate()
-            self.stream_process = None
-            return "A2DP stream stopped"
-        return "No active A2DP stream"
-
-    def get_connected_a2dp_source_devices(self, interface):
-        """
-        Get a list of currently connected A2DP source devices on the given interface.
-
-        Args:
-            interface (str): Controller interface like 'hci0' or 'hci1'
-
-        Returns:
-            dict: Dictionary of connected A2DP source devices (MAC -> Name)
-        """
-        connected = {}
-        adapter_path = f"/org/bluez/{interface}"
-        om = dbus.Interface(self.bus.get_object("org.bluez", "/"), "org.freedesktop.DBus.ObjectManager")
-        objects = om.GetManagedObjects()
-
-        for path, interfaces in objects.items():
-            if "org.bluez.Device1" in interfaces:
-                props = interfaces["org.bluez.Device1"]
-                if props.get("Connected", False) and props.get("Adapter") == adapter_path:
-                    uuids = props.get("UUIDs", [])
-                    if any("110a" in uuid.lower() for uuid in uuids):  # A2DP Source UUID
-                        address = props.get("Address")
-                        name = props.get("Name", "Unknown")
-                        connected[address] = name
-        return connected
-
-    def get_connected_a2dp_sink_devices(self, interface):
-        """
-        Get a list of currently connected A2DP sink devices on the given interface.
-
-        Args:
-            interface (str): Controller interface like 'hci0' or 'hci1'
-
-        Returns:
-            dict: Dictionary of connected A2DP sink devices (MAC -> Name)
-        """
-        connected = {}
-        adapter_path = f"/org/bluez/{interface}"
-        om = dbus.Interface(self.bus.get_object("org.bluez", "/"), "org.freedesktop.DBus.ObjectManager")
-        objects = om.GetManagedObjects()
-
-        for path, interfaces in objects.items():
-            if "org.bluez.Device1" in interfaces:
-                props = interfaces["org.bluez.Device1"]
-                if props.get("Connected", False) and props.get("Adapter") == adapter_path:
-                    uuids = props.get("UUIDs", [])
-                    if any("110b" in uuid.lower() for uuid in uuids):  # A2DP Sink UUID
-                        address = props.get("Address")
-                        name = props.get("Name", "Unknown")
-                        connected[address] = name
-        return connected
-
-    def media_control(self, command):
-        """
-        Send an AVRCP media control command to a connected A2DP device using the correct controller.
-
-        Supported commands: play, pause, next, previous, rewind.
-
-        :param command: The command to send as a string.
-        :return: Result message.
-        """
-        valid = {
-            "play": "Play",
-            "pause": "Pause",
-            "next": "Next",
-            "previous": "Previous",
-            "rewind": "FastRewind"
-        }
-
-        if command not in valid:
-            return f"Invalid command: {command}"
-
-        om = dbus.Interface(self.bus.get_object("org.bluez", "/"), "org.freedesktop.DBus.ObjectManager")
-        objects = om.GetManagedObjects()
-
-        # Filter MediaControl1 interfaces under the current adapter (e.g., hci0)
-        for path, interfaces in objects.items():
-            if "org.bluez.MediaControl1" in interfaces and f"/{self.interface}/" in path:
-                try:
-                    control_iface = dbus.Interface(self.bus.get_object("org.bluez", path), "org.bluez.MediaControl1")
-                    getattr(control_iface, valid[command])()
-                    return f"AVRCP {command} sent to {path}"
-                except Exception as e:
-                    return f"Error sending AVRCP {command}: {str(e)}"
-
-        return f"No MediaControl1 interface found under {self.interface} (is device connected via A2DP with AVRCP?)"
-
-    '''def get_connected_a2dp_sink_devices(self):
-        """
-        Get a list of currently connected A2DP sink devices.
+        Start OPP receiver to receive files from a remote device.
 
         args: None
-        Returns:
-            dict: Dictionary of connected device MAC addresses and their names.
+        returns: None
         """
-        self.refresh_device_list()
-        return {
-            addr: dev["Name"]
-            for addr, dev in self.devices.items()
-            if dev["Connected"] and any("110b" in uuid.lower() for uuid in dev["UUIDs"])
-        }
 
-    def get_connected_a2dp_source_devices(self):
+        success = self.bluetooth_device_manager.start_opp_receiver()
+        QMessageBox.information(None, "OPP", "Ready to receive files..." if success else "Failed to start receiver.")
+
+    def build_opp_tab(self,device_address):
+        bold_font = QFont()
+        bold_font.setBold(True)
+
+        layout = QVBoxLayout()
+        opp_label = QLabel("OPP Functionality:")
+        opp_label.setFont(bold_font)
+        opp_label.setStyleSheet("color:black;")
+        layout.addWidget(opp_label)
+
+        # Device selection
+        '''
+        connected_devices = self.bluetooth_device_manager.get_connected_devices()
+        device_selection_layout = QHBoxLayout()
+        device_label = QLabel("Select Device:")
+        device_label.setFont(bold_font)
+        device_label.setStyleSheet("color:black;")
+        device_selection_layout.addWidget(device_label)
+        self.device_selector = QComboBox()
+        for address, name in connected_devices.items():
+            self.device_selector.addItem(f"{name} ({address})", address)
+        self.device_selector.currentIndexChanged.connect(self.on_device_selected_for_a2dp)
+        device_selection_layout.addWidget(self.device_selector)
+        layout.addLayout(device_selection_layout)
+        '''
+
+        #device_label = QLabel(f"Sending/Receiving with Device: {self.device_address}")
+        #device_label.setFont(bold_font)
+        #device_label.setStyleSheet("color:black;")
+        #layout.addWidget(device_label)
+
+        # File selection
+        is_connected= self.bluetooth_device_manager.is_device_connected(device_address)
+        #is connected=self.bluetooth_device_manager.get_connected_devices(device_address)
+        if is_connected:
+            file_selection_layout = QHBoxLayout()
+            file_label = QLabel("Select File:")
+            file_label.setFont(bold_font)
+            file_label.setStyleSheet("color:black;")
+            file_selection_layout.addWidget(file_label)
+            self.opp_location_input = QLineEdit()
+            self.opp_location_input.setReadOnly(True)
+            file_selection_layout.addWidget(self.opp_location_input)
+            self.browse_opp_button = QPushButton("Browse")
+            self.browse_opp_button.setFont(bold_font)
+            self.browse_opp_button.clicked.connect(self.browse_opp_file)
+            file_selection_layout.addWidget(self.browse_opp_button)
+            layout.addLayout(file_selection_layout)
+
+
+        # Send and Receive buttons
+            button_layout = QHBoxLayout()
+            self.send_file_button = QPushButton("Send File")
+            self.send_file_button.setFont(bold_font)
+            self.send_file_button.setStyleSheet("color:black;")
+            self.send_file_button.clicked.connect(self.send_file)
+            button_layout.addWidget(self.send_file_button)
+
+            self.receive_file_button = QPushButton("Receive File")
+            self.receive_file_button.setFont(bold_font)
+            self.receive_file_button.setStyleSheet("color:black;")
+            self.receive_file_button.clicked.connect(self.receive_file)
+            button_layout.addWidget(self.receive_file_button)
+
+            layout.addLayout(button_layout)
+
+        widget = QWidget()
+        widget.setLayout(layout)
+        widget.setStyleSheet("background-color: lightblue; color: black;")
+        return widget
+
+#-------------PROFILE TABS GENERATION-----------------------------
+    def load_profile_tabs_for_device(self, device_address):
+        bold_font = QFont()
+        bold_font.setBold(True)
+        is_connected = self.bluetooth_device_manager.is_device_connected(device_address)
+        #print(is_connected)
+        if hasattr(self, 'profile_methods_widget'):
+            self.profile_methods_widget.setParent(None)
+
+        self.device_address = device_address
+        self.profile_description_text_browser.clear()
+        if is_connected:
+            self.profile_description_text_browser.append(f"Connected Device: {device_address}")
+        self.profile_description_text_browser.setFont(bold_font)
+        self.profile_description_text_browser.append("Select a profile to proceed (A2DP or OPP)")
+
+        # Create empty tabs for A2DP and OPP
+        self.device_tab_widget = QTabWidget()
+        self.device_tab_widget.setMaximumWidth(600)
+        self.device_tab_widget.setFont(bold_font)
+        self.device_tab_widget.setStyleSheet("color: black; background-color: lightblue;")
+
+        self.a2dp_tab_placeholder = QWidget()
+        self.a2dp_tab_placeholder.setMaximumWidth(600)
+        self.opp_tab_placeholder = QWidget()
+        self.opp_tab_placeholder.setMaximumWidth(600)
+
+        self.device_tab_widget.addTab(self.a2dp_tab_placeholder, "A2DP")
+        self.device_tab_widget.addTab(self.opp_tab_placeholder, "OPP")
+
+        self.device_tab_widget.currentChanged.connect(self.on_profile_tab_changed)
+
+        # === Main layout with tabs + optional connect button ===
+        self.profile_methods_layout = QVBoxLayout()
+        self.profile_methods_layout.addWidget(self.device_tab_widget)
+
+        # Show connect button if device is not connected
+        if not self.bluetooth_device_manager.is_device_connected(device_address):
+            warning_label = QLabel(" Device is not connected. Connect to enable profile controls.")
+            warning_label.setFont(bold_font)
+            warning_label.setStyleSheet("color: red;")
+            self.profile_methods_layout.addWidget(warning_label)
+
+        self.profile_methods_widget = QWidget()
+        self.profile_methods_widget.setMaximumWidth(500)
+        self.profile_methods_widget.setLayout(self.profile_methods_layout)
+
+        self.findChild(QGridLayout).addWidget(self.profile_methods_widget, 2, 2, 3, 1)
+
+        # Trigger tab setup if already connected
+        if self.bluetooth_device_manager.is_device_connected(device_address):
+            self.on_profile_tab_changed(self.device_tab_widget.currentIndex())
+        # ✅ Add connect/disconnect/unpair control buttons
+
+        self.add_connection_controls(self.profile_methods_layout, device_address)
+
+
+    def add_connection_controls(self, layout: QVBoxLayout, device_address: str):
         """
-        Get a list of currently connected A2DP source devices.
-
-        args: None
-        Returns:
-            dict: Dictionary of connected device MAC addresses and their names.
+        Add Connect / Disconnect / Unpair buttons to the given layout.
+        These buttons remain visible but enable/disable based on current device state.
         """
-        self.refresh_device_list()
-        return {
-            addr: dev["Name"]
-            for addr, dev in self.devices.items()
-            if dev["Connected"] and any("110a" in uuid.lower() for uuid in dev["UUIDs"])
-        }
+        bold_font = QFont()
+        bold_font.setBold(True)
 
+        button_layout = QHBoxLayout()
 
-    def media_control(self, command):
+        self.is_connected = self.bluetooth_device_manager.is_device_connected(device_address)
+        self.is_paired = device_address in self.bluetooth_device_manager.get_paired_devices(device_address)
+
+        # Connect Button
+        self.connect_button = QPushButton("Connect")
+        #self.update_device_buttons_state(device_address)  # Enable/disable based on state
+        self.connect_button.setFont(bold_font)
+        self.connect_button.setStyleSheet("color: black; padding: 4px;")
+        self.connect_button.setFixedWidth(100)
+        self.connect_button.setEnabled(not self.is_connected)
+        self.connect_button.clicked.connect(lambda: self.connect_and_reload(device_address))
+        button_layout.addWidget(self.connect_button)
+
+        # Disconnect Button
+        self.disconnect_button = QPushButton("Disconnect")
+        self.disconnect_button.setFont(bold_font)
+        self.disconnect_button.setStyleSheet("color: black; padding: 4px;")
+        self.disconnect_button.setFixedWidth(100)
+        self.disconnect_button.setEnabled(self.is_connected)
+
+        self.disconnect_button.clicked.connect(lambda: self.disconnect_and_reload(device_address))
+        button_layout.addWidget(self.disconnect_button)
+
+        # Unpair Button
+        self.unpair_button = QPushButton("Unpair")
+        self.unpair_button.setFont(bold_font)
+        self.unpair_button.setStyleSheet("color: black; padding: 4px;")
+        self.unpair_button.setFixedWidth(100)
+        #self.unpair_button.setEnabled(self.is_paired)
+        self.unpair_button.setEnabled(True)
+
+        self.unpair_button.clicked.connect(lambda checked= False, addr=device_address: self.unpair_and_reload(addr))
+        #self.unpair_button.clicked.connect(lambda: print("unpair button clicked"))
+        button_layout.addWidget(self.unpair_button)
+
+        layout.addLayout(button_layout)
+
+    def connect_and_reload(self, device_address):
+        success = self.bluetooth_device_manager.br_edr_connect(device_address,self.interface)
+        if success:
+            print(f"[INFO] {device_address} connected successfully.")
+            self.load_profile_tabs_for_device(device_address)
+        else:
+            QMessageBox.warning(self, "Connection Failed", f"Failed to connect to {device_address}.")
+
+    def disconnect_and_reload(self, device_address):
+        success = self.bluetooth_device_manager.disconnect_le_device(device_address,self.interface)
+        if success:
+            print(f"[INFO] Disconnected from {device_address}")
+        else:
+            QMessageBox.warning(self, "Disconnection Failed", f"Could not disconnect from {device_address}")
+        self.load_profile_tabs_for_device(device_address)
+
+    def unpair_and_reload(self, device_address):
+        success = self.bluetooth_device_manager.remove_device(device_address,self.interface)
+        if success:
+            print(f"[INFO] Unpaired {device_address}")
+        else:
+            QMessageBox.warning(self, "Unpair Failed", f"Could not unpair {device_address}")
+        self.remove_unpaired_device(device_address)
+
+        if (self.profiles_list_widget.count())==1:
+            self.profiles_list_widget.itemSelectionChanged.connect(self.profile_selected)
+        else:
+            self.load_profile_tabs_for_device(device_address)
+
+    def remove_unpaired_device(self, unpaired_address):
         """
-        Send an AVRCP media control command to a connected A2DP device.
-
-        Supported commands: play, pause, next, previous, rewind.
-
-        :param command: The command to send as a string.
-        :return: Result message.
+        Removes a specific unpaired device from the profiles list (if present).
+        This avoids clearing the entire list and keeps all other devices intact.
         """
-        valid = {
-            "play": "Play",
-            "pause": "Pause",
-            "next": "Next",
-            "previous": "Previous",
-            "rewind": "FastRewind"
-        }
+        for i in range(self.profiles_list_widget.count()):
+            item_text = self.profiles_list_widget.item(i).text().strip()
+            if item_text == unpaired_address:
+                self.profiles_list_widget.takeItem(i)
+                break
 
-        if command not in valid:
-            return f"Invalid command: {command}"
+#---------PROFILE TAB SELECTION-----------------------------
+    def on_profile_tab_changed(self, index):
+        if not hasattr(self, 'device_tab_widget') or index < 0:
+            return  # Prevent early or invalid calls
 
-        om = dbus.Interface(self.bus.get_object("org.bluez", "/"), "org.freedesktop.DBus.ObjectManager")
-        objects = om.GetManagedObjects()
+        selected_tab = self.device_tab_widget.tabText(index)
 
-        for path, interfaces in objects.items():
-            if "org.bluez.MediaControl1" in interfaces:
-                try:
-                    control_iface = dbus.Interface(self.bus.get_object("org.bluez", path), "org.bluez.MediaControl1")
-                    getattr(control_iface, valid[command])()
-                    return f"AVRCP {command} sent to {path}"
-                except Exception as e:
-                    return f"Error sending AVRCP {command}: {str(e)}"
-        return "No MediaControl1 interface found (is device connected as A2DP Source with AVRCP?)" '''
+
+
+        if selected_tab == "A2DP":
+            self.clear_layout(self.a2dp_tab_placeholder)
+            layout = QVBoxLayout()
+            # Build the consolidated A2DP panel directly
+            a2dp_panel = self.build_a2dp_ui(self.device_address)
+            print(self.device_address)
+            layout.addWidget(a2dp_panel)
+            self.a2dp_tab_placeholder.setLayout(layout)
+            self.a2dp_tab_placeholder.update()
+
+        elif selected_tab == "OPP":
+            self.clear_layout(self.opp_tab_placeholder)
+            layout = QVBoxLayout()
+            opp_tab = self.build_opp_tab(self.device_address)
+            layout.addWidget(opp_tab)
+            self.opp_tab_placeholder.setLayout(layout)
+            self.opp_tab_placeholder.update()
+
+
+    def clear_layout(self, widget):
+        layout = widget.layout()
+        if layout is not None:
+            while layout.count():
+                child = layout.takeAt(0)
+                if child.widget():
+                    child.widget().deleteLater()
+            QWidget().setLayout(layout)  # Detach layout from widget
+
+#---------CONNECTED/PAIRED DEVICE ADDED BELOW GAP---------
+
+    def add_device(self, device_address):
+        """
+        Adds a device address below the GAP item in the profile list if not already present.
+        Args:
+            device_address (str): The paired/connected device MAC address (e.g., 20:32:C6:7B:91:1C)
+        """
+
+        #Add already connected devices at startup
+
+        # Find GAP index
+        for i in range(self.profiles_list_widget.count()):
+            if self.profiles_list_widget.item(i).text().strip() == "GAP":
+                gap_index = i
+                break
+        else:
+            return  # GAP not found
+
+        # Check if device is already added
+        for i in range(self.profiles_list_widget.count()):
+            if self.profiles_list_widget.item(i).text().strip() == device_address:
+                return  # Already added
+
+        # Add device address as a new list item
+        device_item = QListWidgetItem(device_address)
+        device_item.setFont(QFont("Arial", 10))
+        device_item.setForeground(Qt.GlobalColor.black)
+
+        self.profiles_list_widget.insertItem(gap_index + 1, device_item)
+
+
+#------CHECK IF IT IS VALID BLUETOOTH ADDRESS-------
+    def is_bluetooth_address(self, text):
+        pattern = r"^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$"
+        return re.match(pattern, text) is not None
