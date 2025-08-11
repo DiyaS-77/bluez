@@ -1,3 +1,18 @@
+
++-----------------------------------------------------------+
+| GAP Profile Selected                                      |
+| Use the below methods as required:                        |
++-----------------------------------------------------------+
+| SetDiscoverable:                                           |
+| SetDiscoverable Timeout: [   0   ] [OFF]                   |
+| [ REFRESH ]                                                |
++-----------------------------------------------------------+
+| Inquiry:                                                   |
+| Inquiry Timeout:     [   0   ] [STOP]                      |
+| [ REFRESH ]                                                |
++-----------------------------------------------------------+
+
+
 +-----------------------------------------------------------+
 | GAP Profile Selected                                      |
 | Use the below methods as required:                        |
