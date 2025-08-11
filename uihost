@@ -1,4 +1,24 @@
-
++----------------------------+
+| GAP                        |
++----------------------------+
+| Paired Devices             |
+| 48:C4:61:AB:BB:B4           |
+| 5C:F3:70:94:25:92           |
+| 00:0B:AB:CE:3F:B1           |
+| 48:74:12:B1:C8:36           |
++----------------------------+
+| Controller Details         |
+| Controller Name:           |
+|   'Controller_Two'         |
+| Controller Address:        |
+|   5C:F3:70:A2:C3:26         |
+| Link Mode: SLAVE ACCEPT    |
+| Link Policy: RSWITCH SNIFF |
+| HCI Version: 4.0 (0x6)     |
+| LMP Version: 4.0 (0x6)     |
+| Manufacturer:              |
+|   Broadcom Corporation (15)|
++----------------------------+
 +-----------------------------------------------------------+
 | GAP Profile Selected                                      |
 | Use the below methods as required:                        |
