@@ -1,0 +1,44 @@
+#!/usr/bin/env python3
+import dbus
+import dbus.service
+import dbus.mainloop.glib
+from gi.repository import GLib
+
+AGENT_PATH = "/org/bluez/obex_agent"
+
+class ObexAgent(dbus.service.Object):
+    def __init__(self, bus, path):
+        dbus.service.Object.__init__(self, bus, path)
+
+    # Called when a device tries to send a file
+    @dbus.service.method("org.bluez.obex.Agent", in_signature="o", out_signature="")
+    def AuthorizePush(self, transfer):
+        print(f"AuthorizePush called for transfer: {transfer}")
+        # Always accept the transfer
+        return
+
+    # Called when the request is canceled
+    @dbus.service.method("org.bluez.obex.Agent", in_signature="", out_signature="")
+    def Cancel(self):
+        print("Transfer canceled")
+
+def main():
+    dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
+    bus = dbus.SessionBus()
+
+    # Export the agent
+    agent = ObexAgent(bus, AGENT_PATH)
+
+    # Register with AgentManager1
+    manager = dbus.Interface(
+        bus.get_object("org.bluez.obex", "/org/bluez/obex"),
+        "org.bluez.obex.AgentManager1"
+    )
+    manager.RegisterAgent(AGENT_PATH)
+
+    print("OBEX Agent registered at", AGENT_PATH)
+    loop = GLib.MainLoop()
+    loop.run()
+
+if __name__ == "__main__":
+    main()
